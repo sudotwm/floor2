@@ -12,17 +12,19 @@
         display: block;
         width: 100%;
         height: 100%;
+        /* Ensure touch events are captured by the canvas */
+        touch-action: none; 
       }
       /* Floating Card Menu Styles */
       #menu {
         position: fixed;
         top: 20px;
         left: 20px;
-        background: rgba(255, 255, 255, 0.9); /* Slightly less transparent */
+        background: rgba(255, 255, 255, 0.9);
         padding: 15px;
         border-radius: 8px;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-        z-index: 10; /* Ensure it's above the A-Frame canvas */
+        z-index: 10;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         color: #333;
       }
@@ -30,13 +32,13 @@
         padding: 10px 15px;
         cursor: pointer;
         background-color: #f0f0f0;
-        margin-bottom: 8px; /* Spacing between items */
+        margin-bottom: 8px;
         border-radius: 5px;
         transition: background-color 0.2s ease;
         font-weight: bold;
       }
       .menu-item:last-child {
-        margin-bottom: 0; /* No margin for the last item */
+        margin-bottom: 0;
       }
       .menu-item:hover {
         background-color: #e0e0e0;
@@ -47,18 +49,15 @@
     </style>
   </head>
   <body>
-    <!-- Floating Card Menu -->
     <div id="menu">
       <div class="menu-item" id="restroom-item">Restroom</div>
       <div class="menu-item" id="lobby-item">Lobby</div> 
     </div>
 
     <a-scene background="color: #ECECEC" vr-mode-ui="enabled: false">
-      <!-- Camera using your position and the working simple-orbit-controls -->
       <a-entity camera id="main-camera" position="0 4 0" rotation="-90 0 0" simple-orbit-controls>
       </a-entity>
       
-      <!-- YOUR MAZE WALLS - Copied directly from your maze.html -->
       <a-box position="0 0.5 -2.5" width="5" height="1" depth="0.2" color="#333"></a-box> 
       <a-box position="0 0.5 2.5" width="5" height="1" depth="0.2" color="#333"></a-box>  
       <a-box position="-2.5 0.5 0" width="0.2" height="1" depth="5" color="#333"></a-box> 
@@ -70,9 +69,7 @@
       <a-box position="-1.5 0.5 1.5" width="2" height="1" depth="0.2" color="#333"></a-box>
       <a-box position="1.5 0.5 0.55877" width="2" height="1" depth="0.2" color="#333"></a-box> 
 
-      <!-- Red Dot (User Start Position) -->
       <a-sphere id="user-start" position="-1.5 0.1 -0.5" radius="0.15" color="red"></a-sphere>
-      <!-- Destinations -->
       <a-sphere id="restroom" position="2.05807 0.1 2.18686" radius="0.15" color="blue"></a-sphere>
       <a-sphere id="lobby" position="-0.00599 0.1 -2.00287" radius="0.15" color="green"></a-sphere> 
 
@@ -92,23 +89,36 @@
           this.camera = this.el.getObject3D('camera');
           this.isDragging = false;
           this.previousMouse = {x: 0, y: 0};
+          this.previousPinchDistance = null; // For pinch-to-zoom
           const initialCamPos = this.el.getAttribute('position');
           const target = new THREE.Vector3().copy(this.data.target);
           this.distance = initialCamPos.distanceTo(target);
 
+          // Event handlers for both mouse and touch
           this.onMouseDown = this.onMouseDown.bind(this);
           this.onMouseMove = this.onMouseMove.bind(this);
           this.onMouseUp = this.onMouseUp.bind(this);
           this.onWheel = this.onWheel.bind(this);
+          this.onTouchStart = this.onTouchStart.bind(this);
+          this.onTouchMove = this.onTouchMove.bind(this);
+          this.onTouchEnd = this.onTouchEnd.bind(this);
 
+          // Add mouse listeners
           this.el.sceneEl.addEventListener('mousedown', this.onMouseDown);
           this.el.sceneEl.addEventListener('mousemove', this.onMouseMove);
           this.el.sceneEl.addEventListener('mouseup', this.onMouseUp);
           this.el.sceneEl.addEventListener('wheel', this.onWheel);
 
+          // Add touch listeners
+          this.el.sceneEl.addEventListener('touchstart', this.onTouchStart);
+          this.el.sceneEl.addEventListener('touchmove', this.onTouchMove);
+          this.el.sceneEl.addEventListener('touchend', this.onTouchEnd);
+          this.el.sceneEl.addEventListener('touchcancel', this.onTouchEnd); // Handle touch cancel
+
           this.updateCameraPosition(); 
         },
 
+        // --- Mouse Handlers (Existing) ---
         onMouseDown: function (evt) {
           if (evt.button === 0) { 
             this.isDragging = true;
@@ -124,17 +134,10 @@
           const deltaX = evt.clientX - this.previousMouse.x;
           const deltaY = evt.clientY - this.previousMouse.y;
 
-          this.el.object3D.rotation.y -= deltaX * this.data.rotateSpeed * 0.01;
-
-          const currentXRotation = this.el.object3D.rotation.x;
-          let newXRotation = currentXRotation - deltaY * this.data.rotateSpeed * 0.01;
-
-          newXRotation = Math.max(-Math.PI * 0.49, Math.min(-0.01, newXRotation));
-          this.el.object3D.rotation.x = newXRotation;
+          this.rotateCamera(deltaX, deltaY);
 
           this.previousMouse.x = evt.clientX;
           this.previousMouse.y = evt.clientY;
-
           this.updateCameraPosition();
         },
 
@@ -146,12 +149,70 @@
         onWheel: function (evt) {
           const zoomAmount = evt.deltaY * this.data.zoomSpeed * 0.01;
           this.distance += zoomAmount;
-
           this.distance = Math.max(this.data.minZoom, Math.min(this.data.maxZoom, this.distance));
-
           this.updateCameraPosition();
         },
 
+        // --- Touch Handlers (New) ---
+        onTouchStart: function (evt) {
+            if (evt.touches.length === 1) { // One finger for rotation/pan
+                this.isDragging = true;
+                this.previousMouse.x = evt.touches[0].clientX;
+                this.previousMouse.y = evt.touches[0].clientY;
+            } else if (evt.touches.length === 2) { // Two fingers for pinch-to-zoom
+                this.isDragging = false; // Disable single-finger drag
+                this.previousPinchDistance = this.getTouchDistance(evt.touches);
+            }
+            evt.preventDefault(); // Prevent scrolling/zooming default browser behavior
+        },
+
+        onTouchMove: function (evt) {
+            if (evt.touches.length === 1 && this.isDragging) { // One finger for rotation/pan
+                const deltaX = evt.touches[0].clientX - this.previousMouse.x;
+                const deltaY = evt.touches[0].clientY - this.previousMouse.y;
+
+                this.rotateCamera(deltaX, deltaY);
+
+                this.previousMouse.x = evt.touches[0].clientX;
+                this.previousMouse.y = evt.touches[0].clientY;
+                this.updateCameraPosition();
+            } else if (evt.touches.length === 2 && this.previousPinchDistance !== null) { // Two fingers for pinch-to-zoom
+                const currentPinchDistance = this.getTouchDistance(evt.touches);
+                const pinchDelta = currentPinchDistance - this.previousPinchDistance;
+
+                const zoomAmount = -pinchDelta * this.data.zoomSpeed * 0.01; // Negative for intuitive pinch zoom
+                this.distance += zoomAmount;
+                this.distance = Math.max(this.data.minZoom, Math.min(this.data.maxZoom, this.distance));
+
+                this.previousPinchDistance = currentPinchDistance;
+                this.updateCameraPosition();
+            }
+            evt.preventDefault();
+        },
+
+        onTouchEnd: function (evt) {
+            this.isDragging = false;
+            this.previousPinchDistance = null;
+        },
+
+        getTouchDistance: function (touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        },
+
+        // --- Helper for Rotation (used by both mouse and touch) ---
+        rotateCamera: function(deltaX, deltaY) {
+            this.el.object3D.rotation.y -= deltaX * this.data.rotateSpeed * 0.01;
+
+            const currentXRotation = this.el.object3D.rotation.x;
+            let newXRotation = currentXRotation - deltaY * this.data.rotateSpeed * 0.01;
+
+            newXRotation = Math.max(-Math.PI * 0.49, Math.min(-0.01, newXRotation));
+            this.el.object3D.rotation.x = newXRotation;
+        },
+
+        // --- Update Camera Position (Existing) ---
         updateCameraPosition: function() {
             const target = new THREE.Vector3().copy(this.data.target);
             const offset = new THREE.Vector3(0, 0, this.distance);
@@ -162,11 +223,16 @@
             this.el.object3D.position.copy(target).add(offset);
         },
 
+        // --- Remove Listeners ---
         remove: function () {
           this.el.sceneEl.removeEventListener('mousedown', this.onMouseDown);
           this.el.sceneEl.removeEventListener('mousemove', this.onMouseMove);
           this.el.sceneEl.removeEventListener('mouseup', this.onMouseUp);
           this.el.sceneEl.removeEventListener('wheel', this.onWheel);
+          this.el.sceneEl.removeEventListener('touchstart', this.onTouchStart);
+          this.el.sceneEl.removeEventListener('touchmove', this.onTouchMove);
+          this.el.sceneEl.removeEventListener('touchend', this.onTouchEnd);
+          this.el.sceneEl.removeEventListener('touchcancel', this.onTouchEnd);
         }
       });
 
@@ -193,27 +259,27 @@
           const endPos = destinationElement.getAttribute('position');
           
           let pathPoints = [];
-          const pathThickness = 0.2; // Made the line even thicker!
+          const pathThickness = 0.6; 
 
           if (destinationElement.id === 'restroom') {
-            // Path for Restroom (Blue Dot)
+            // Path for Restroom (Blue Dot) - confirmed working
             pathPoints = [
-                startPos, // Red dot start: -1.5 0.1 -0.5
-                {x: -1.5, y: 0.1, z: 1.0},  // Move south past the top-left L-wall
-                {x: -0.5, y: 0.1, z: 1.0},  // Move east to the central open area (before the vertical wall)
-                {x: 0.5, y: 0.1, z: 1.0},   // Continue east past the central vertical wall
-                {x: 0.5, y: 0.1, z: 1.5},   // Move south into the bottom-right quadrant
-                {x: 1.5, y: 0.1, z: 1.5},   // Move east towards the final corridor
-                endPos // Blue dot end: 2.05807 0.1 2.18686 (final approach)
+                startPos, 
+                {x: -1.5, y: 0.1, z: 1.0},  
+                {x: -0.5, y: 0.1, z: 1.0},  
+                {x: 0.5, y: 0.1, z: 1.0},   
+                {x: 0.5, y: 0.1, z: 1.5},   
+                {x: 1.5, y: 0.1, z: 1.5},   
+                endPos 
             ];
           } else if (destinationElement.id === 'lobby') {
-            // Path for Lobby (Green Dot) - METICULOUSLY FIXED PATH
+            // Path for Lobby (Green Dot) - METICULOUSLY FIXED AGAIN
             pathPoints = [
                 startPos, // Red dot start: -1.5 0.1 -0.5
-                {x: -1.5, y: 0.1, z: 1},  // Move south into the open corridor (clears wall at z=-0.5)
-                {x: 0, y: 0.1, z: 1},   // Move east past the central vertical wall (x=0)
-                {x: 0, y: 0.1, z: -1.5},  // Move north to clear the horizontal wall at z=-1.5
-                {x: 0.0, y: 0.1, z: -1.5},  // Move west to the central top corridor
+                {x: -1.5, y: 0.1, z: 0.5},  // Move south to open corridor
+                {x: 0.5, y: 0.1, z: 0.5},   // Move east past central vertical wall
+                {x: 0.5, y: 0.1, z: -1.5},  // Move north to clear horizontal wall at z=-1.5
+                {x: 0.0, y: 0.1, z: -1.5},  // Move west to align with lobby's X and clear central opening
                 endPos // Green dot end: -0.00599 0.1 -2.00287 (final approach)
             ];
           }
@@ -223,13 +289,11 @@
             const p1 = new THREE.Vector3(pathPoints[i].x, pathPoints[i].y, pathPoints[i].z);
             const p2 = new THREE.Vector3(pathPoints[i+1].x, pathPoints[i+1].y, pathPoints[i+1].z);
 
-            const distance = p1.distanceTo(p2); // Length of the segment
-            const midpoint = new THREE.Vector3().lerpVectors(p1, p2, 0.5); // Midpoint for position
+            const distance = p1.distanceTo(p2); 
+            const midpoint = new THREE.Vector3().lerpVectors(p1, p2, 0.5); 
 
-            // Calculate rotation to align the box with the segment
             const direction = new THREE.Vector3().subVectors(p2, p1).normalize();
-            const axis = new THREE.Vector3(0, 1, 0); // Y-axis for rotation around
-            const angle = Math.atan2(direction.x, direction.z); // Angle in YZ plane
+            const angle = Math.atan2(direction.x, direction.z); 
 
             const segmentEl = document.createElement('a-box'); 
             segmentEl.setAttribute('position', `${midpoint.x} ${midpoint.y} ${midpoint.z}`);
