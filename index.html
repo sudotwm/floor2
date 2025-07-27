@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <style>
+      body { margin: 0; overflow: hidden; }
+      html, body {
+        width: 100%;
+        height: 100%;
+      }
+      a-scene {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      /* Floating Card Menu Styles */
+      #menu {
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        background: rgba(255, 255, 255, 0.9); /* Slightly less transparent */
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        z-index: 10; /* Ensure it's above the A-Frame canvas */
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #333;
+      }
+      .menu-item {
+        padding: 10px 15px;
+        cursor: pointer;
+        background-color: #f0f0f0;
+        margin-bottom: 8px; /* Spacing between items */
+        border-radius: 5px;
+        transition: background-color 0.2s ease;
+        font-weight: bold;
+      }
+      .menu-item:last-child {
+        margin-bottom: 0; /* No margin for the last item */
+      }
+      .menu-item:hover {
+        background-color: #e0e0e0;
+      }
+      .menu-item:active {
+        background-color: #d0d0d0;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Floating Card Menu -->
+    <div id="menu">
+      <div class="menu-item" id="restroom-item">Restroom</div>
+      <div class="menu-item" id="lobby-item">Lobby</div> 
+    </div>
+
+    <a-scene background="color: #ECECEC" vr-mode-ui="enabled: false">
+      <!-- Camera using your position and the working simple-orbit-controls -->
+      <a-entity camera id="main-camera" position="0 4 0" rotation="-90 0 0" simple-orbit-controls>
+      </a-entity>
+      
+      <!-- YOUR MAZE WALLS - Copied directly from your maze.html -->
+      <a-box position="0 0.5 -2.5" width="5" height="1" depth="0.2" color="#333"></a-box> 
+      <a-box position="0 0.5 2.5" width="5" height="1" depth="0.2" color="#333"></a-box>  
+      <a-box position="-2.5 0.5 0" width="0.2" height="1" depth="5" color="#333"></a-box> 
+      <a-box position="2.5 0.5 0" width="0.2" height="1" depth="5" color="#333"></a-box>  
+      <a-box position="-1.5 0.5 -1.5" width="2" height="1" depth="0.2" color="#333"></a-box>
+      <a-box position="-0.5 0.5 -0.5" width="0.2" height="1" depth="2" color="#333"></a-box>
+      <a-box position="1.5 0.5 -1.5" width="2" height="1" depth="0.2" color="#333"></a-box>
+      <a-box position="0.5 0.5 -0.5" width="0.2" height="1" depth="2" color="#333"></a-box>
+      <a-box position="-1.5 0.5 1.5" width="2" height="1" depth="0.2" color="#333"></a-box>
+      <a-box position="1.5 0.5 0.55877" width="2" height="1" depth="0.2" color="#333"></a-box> 
+
+      <!-- Red Dot (User Start Position) -->
+      <a-sphere id="user-start" position="-1.5 0.1 -0.5" radius="0.15" color="red"></a-sphere>
+      <!-- Destinations -->
+      <a-sphere id="restroom" position="2.05807 0.1 2.18686" radius="0.15" color="blue"></a-sphere>
+      <a-sphere id="lobby" position="-0.00599 0.1 -2.00287" radius="0.15" color="green"></a-sphere> 
+
+    </a-scene>
+
+    <script>
+      AFRAME.registerComponent('simple-orbit-controls', {
+        schema: {
+          rotateSpeed: {type: 'number', default: 0.1},
+          zoomSpeed: {type: 'number', default: 0.5},
+          minZoom: {type: 'number', default: 2}, 
+          maxZoom: {type: 'number', default: 25},
+          target: {type: 'vec3', default: {x: 0, y: 0, z: 0}}
+        },
+
+        init: function () {
+          this.camera = this.el.getObject3D('camera');
+          this.isDragging = false;
+          this.previousMouse = {x: 0, y: 0};
+          const initialCamPos = this.el.getAttribute('position');
+          const target = new THREE.Vector3().copy(this.data.target);
+          this.distance = initialCamPos.distanceTo(target);
+
+          this.onMouseDown = this.onMouseDown.bind(this);
+          this.onMouseMove = this.onMouseMove.bind(this);
+          this.onMouseUp = this.onMouseUp.bind(this);
+          this.onWheel = this.onWheel.bind(this);
+
+          this.el.sceneEl.addEventListener('mousedown', this.onMouseDown);
+          this.el.sceneEl.addEventListener('mousemove', this.onMouseMove);
+          this.el.sceneEl.addEventListener('mouseup', this.onMouseUp);
+          this.el.sceneEl.addEventListener('wheel', this.onWheel);
+
+          this.updateCameraPosition(); 
+        },
+
+        onMouseDown: function (evt) {
+          if (evt.button === 0) { 
+            this.isDragging = true;
+            this.previousMouse.x = evt.clientX;
+            this.previousMouse.y = evt.clientY;
+            this.el.sceneEl.canvas.style.cursor = 'grabbing';
+          }
+        },
+
+        onMouseMove: function (evt) {
+          if (!this.isDragging) { return; }
+
+          const deltaX = evt.clientX - this.previousMouse.x;
+          const deltaY = evt.clientY - this.previousMouse.y;
+
+          this.el.object3D.rotation.y -= deltaX * this.data.rotateSpeed * 0.01;
+
+          const currentXRotation = this.el.object3D.rotation.x;
+          let newXRotation = currentXRotation - deltaY * this.data.rotateSpeed * 0.01;
+
+          newXRotation = Math.max(-Math.PI * 0.49, Math.min(-0.01, newXRotation));
+          this.el.object3D.rotation.x = newXRotation;
+
+          this.previousMouse.x = evt.clientX;
+          this.previousMouse.y = evt.clientY;
+
+          this.updateCameraPosition();
+        },
+
+        onMouseUp: function () {
+          this.isDragging = false;
+          this.el.sceneEl.canvas.style.cursor = 'grab';
+        },
+
+        onWheel: function (evt) {
+          const zoomAmount = evt.deltaY * this.data.zoomSpeed * 0.01;
+          this.distance += zoomAmount;
+
+          this.distance = Math.max(this.data.minZoom, Math.min(this.data.maxZoom, this.distance));
+
+          this.updateCameraPosition();
+        },
+
+        updateCameraPosition: function() {
+            const target = new THREE.Vector3().copy(this.data.target);
+            const offset = new THREE.Vector3(0, 0, this.distance);
+            
+            const rotationMatrix = new THREE.Matrix4().extractRotation(this.el.object3D.matrixWorld);
+            offset.applyMatrix4(rotationMatrix);
+
+            this.el.object3D.position.copy(target).add(offset);
+        },
+
+        remove: function () {
+          this.el.sceneEl.removeEventListener('mousedown', this.onMouseDown);
+          this.el.sceneEl.removeEventListener('mousemove', this.onMouseMove);
+          this.el.sceneEl.removeEventListener('mouseup', this.onMouseUp);
+          this.el.sceneEl.removeEventListener('wheel', this.onWheel);
+        }
+      });
+
+      // --- Menu and Path Logic ---
+      document.addEventListener('DOMContentLoaded', function() {
+        const restroomItem = document.getElementById('restroom-item');
+        const lobbyItem = document.getElementById('lobby-item'); 
+        const userStart = document.getElementById('user-start');
+        const restroom = document.getElementById('restroom');
+        const lobby = document.getElementById('lobby'); 
+        const scene = document.querySelector('a-scene');
+
+        // Function to clear all existing path segments
+        function clearPath() {
+          const existingSegments = document.querySelectorAll('.path-segment');
+          existingSegments.forEach(segment => segment.parentNode.removeChild(segment));
+        }
+
+        // Function to draw a path
+        function drawPath(destinationElement) {
+          clearPath(); 
+
+          const startPos = userStart.getAttribute('position');
+          const endPos = destinationElement.getAttribute('position');
+          
+          let pathPoints = [];
+          const pathThickness = 0.2; // Made the line even thicker!
+
+          if (destinationElement.id === 'restroom') {
+            // Path for Restroom (Blue Dot)
+            pathPoints = [
+                startPos, // Red dot start: -1.5 0.1 -0.5
+                {x: -1.5, y: 0.1, z: 1.0},  // Move south past the top-left L-wall
+                {x: -0.5, y: 0.1, z: 1.0},  // Move east to the central open area (before the vertical wall)
+                {x: 0.5, y: 0.1, z: 1.0},   // Continue east past the central vertical wall
+                {x: 0.5, y: 0.1, z: 1.5},   // Move south into the bottom-right quadrant
+                {x: 1.5, y: 0.1, z: 1.5},   // Move east towards the final corridor
+                endPos // Blue dot end: 2.05807 0.1 2.18686 (final approach)
+            ];
+          } else if (destinationElement.id === 'lobby') {
+            // Path for Lobby (Green Dot) - METICULOUSLY FIXED PATH
+            pathPoints = [
+                startPos, // Red dot start: -1.5 0.1 -0.5
+                {x: -1.5, y: 0.1, z: 1},  // Move south into the open corridor (clears wall at z=-0.5)
+                {x: 0, y: 0.1, z: 1},   // Move east past the central vertical wall (x=0)
+                {x: 0, y: 0.1, z: -1.5},  // Move north to clear the horizontal wall at z=-1.5
+                {x: 0.0, y: 0.1, z: -1.5},  // Move west to the central top corridor
+                endPos // Green dot end: -0.00599 0.1 -2.00287 (final approach)
+            ];
+          }
+
+          // Create multiple BOX segments to form the path
+          for (let i = 0; i < pathPoints.length - 1; i++) {
+            const p1 = new THREE.Vector3(pathPoints[i].x, pathPoints[i].y, pathPoints[i].z);
+            const p2 = new THREE.Vector3(pathPoints[i+1].x, pathPoints[i+1].y, pathPoints[i+1].z);
+
+            const distance = p1.distanceTo(p2); // Length of the segment
+            const midpoint = new THREE.Vector3().lerpVectors(p1, p2, 0.5); // Midpoint for position
+
+            // Calculate rotation to align the box with the segment
+            const direction = new THREE.Vector3().subVectors(p2, p1).normalize();
+            const axis = new THREE.Vector3(0, 1, 0); // Y-axis for rotation around
+            const angle = Math.atan2(direction.x, direction.z); // Angle in YZ plane
+
+            const segmentEl = document.createElement('a-box'); 
+            segmentEl.setAttribute('position', `${midpoint.x} ${midpoint.y} ${midpoint.z}`);
+            segmentEl.setAttribute('rotation', `0 ${THREE.MathUtils.radToDeg(angle)} 0`); 
+            segmentEl.setAttribute('width', pathThickness); 
+            segmentEl.setAttribute('height', 0.05); 
+            segmentEl.setAttribute('depth', distance); 
+            segmentEl.setAttribute('color', 'yellow');
+            segmentEl.setAttribute('class', 'path-segment'); 
+            scene.appendChild(segmentEl); 
+          }
+        }
+
+        // Event listeners for menu items
+        restroomItem.addEventListener('click', function() {
+          drawPath(restroom);
+        });
+
+        lobbyItem.addEventListener('click', function() {
+          drawPath(lobby);
+        });
+      });
+    </script>
+  </body>
+</html>
